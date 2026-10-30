@@ -1,0 +1,74 @@
+/// Municipios por subregión. Los de [visitadosIniciales] se marcan
+/// la primera vez que se abre la app (los que estaban en verde en tu lista).
+const Map<String, List<String>> subregiones = {
+  'Valle de Aburrá': [
+    'Barbosa', 'Bello', 'Caldas', 'Copacabana', 'Envigado', 'Girardota',
+    'Itagüí', 'La Estrella', 'Medellín', 'Sabaneta',
+  ],
+  'Oriente': [
+    'Abejorral', 'Alejandría', 'Argelia', 'El Carmen de Viboral', 'Cocorná',
+    'Concepción', 'El Peñol', 'El Retiro', 'El Santuario', 'Granada',
+    'Guarne', 'Guatapé', 'La Ceja', 'La Unión', 'Marinilla', 'Nariño',
+    'Rionegro', 'San Carlos', 'San Francisco', 'San Luis', 'San Rafael',
+    'San Vicente Ferrer', 'Sonsón',
+  ],
+  'Norte': [
+    'Angostura', 'Belmira', 'Briceño', 'Campamento', 'Carolina del Príncipe',
+    'Donmatías', 'Entrerríos', 'Guadalupe', 'Gómez Plata', 'Ituango',
+    'San Andrés de Cuerquia', 'San José de la Montaña',
+    'San Pedro de los Milagros', 'Santa Rosa de Osos', 'Toledo', 'Valdivia',
+    'Yarumal',
+  ],
+  'Nordeste': [
+    'Amalfi', 'Anorí', 'Cisneros', 'Remedios', 'Santo Domingo', 'Segovia', 'San Roque',
+    'Vegachí', 'Yalí', 'Yolombó',
+  ],
+  'Magdalena Medio': [
+    'Caracolí', 'Maceo', 'Puerto Berrío', 'Puerto Nare', 'Puerto Triunfo',
+    'Yondó',
+  ],
+  'Occidente': [
+    'Abriaquí', 'Anzá', 'Armenia', 'Buriticá', 'Caicedo',
+    'Cañasgordas', 'Dabeiba', 'Ebéjico', 'Frontino', 'Giraldo', 'Heliconia',
+    'Liborina', 'Olaya', 'Peque', 'Sabanalarga', 'San Jerónimo',
+    'Santa Fe de Antioquia', 'Sopetrán', 'Uramita',
+  ],
+  'Suroeste': [
+    'Amagá', 'Andes', 'Angelópolis', 'Betania', 'Betulia', 'Caramanta',
+    'Ciudad Bolívar', 'Concordia', 'Fredonia', 'Hispania', 'Jardín', 'Jericó',
+    'La Pintada', 'Montebello', 'Pueblorrico', 'Salgar', 'Santa Bárbara',
+    'Tarso', 'Titiribí', 'Támesis', 'Urrao', 'Valparaíso', 'Venecia',
+  ],
+  'Bajo Cauca': [
+    'Caucasia', 'Cáceres', 'El Bagre', 'Nechí', 'Tarazá', 'Zaragoza',
+  ],
+  'Urabá': [
+    'Apartadó', 'Arboletes', 'Carepa', 'Chigorodó', 'Murindó', 'Mutatá',
+    'Necoclí', 'San Juan de Urabá', 'San Pedro de Urabá', 'Turbo',
+    'Vigía del Fuerte',
+  ],
+};
+
+const Set<String> visitadosIniciales = {
+  // Valle de Aburrá (todos)
+  'Barbosa', 'Bello', 'Caldas', 'Copacabana', 'Envigado', 'Girardota',
+  'Itagüí', 'La Estrella', 'Medellín', 'Sabaneta',
+  // Oriente
+  'Carmen de Viboral', 'Cocorná', 'Concepción', 'El Peñol', 'El Retiro',
+  'El Santuario', 'Guarne', 'Guatapé', 'La Ceja', 'La Unión', 'Marinilla',
+  'Rionegro', 'San Rafael', 'San Vicente Ferrer', 'Sonsón',
+  // Norte
+  'Belmira', 'Donmatías', 'Entrerríos', 'San José de la Montaña',
+  'San Pedro de los Milagros', 'Santa Rosa de Osos',
+  // Nordeste
+  'Cisneros', 'Santo Domingo',
+  // Magdalena Medio
+  'Puerto Berrío', 'Puerto Triunfo',
+  // Occidente
+  'Armenia', 'Ebéjico', 'Heliconia', 'San Jerónimo',
+  'Santa Fe de Antioquia', 'Sopetrán',
+  // Suroeste
+  'Amagá', 'Ciudad Bolívar', 'Jardín', 'Titiribí',
+  // Urabá
+  'Apartadó', 'Necoclí', 'Turbo', 'Vigía del Fuerte',
+};

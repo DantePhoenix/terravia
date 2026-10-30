@@ -1,5 +1,3 @@
-/// Municipios por subregión. Los de [visitadosIniciales] se marcan
-/// la primera vez que se abre la app (los que estaban en verde en tu lista).
 const Map<String, List<String>> subregiones = {
   'Valle de Aburrá': [
     'Barbosa', 'Bello', 'Caldas', 'Copacabana', 'Envigado', 'Girardota',
@@ -47,28 +45,4 @@ const Map<String, List<String>> subregiones = {
     'Necoclí', 'San Juan de Urabá', 'San Pedro de Urabá', 'Turbo',
     'Vigía del Fuerte',
   ],
-};
-
-const Set<String> visitadosIniciales = {
-  // Valle de Aburrá (todos)
-  'Barbosa', 'Bello', 'Caldas', 'Copacabana', 'Envigado', 'Girardota',
-  'Itagüí', 'La Estrella', 'Medellín', 'Sabaneta',
-  // Oriente
-  'Carmen de Viboral', 'Cocorná', 'Concepción', 'El Peñol', 'El Retiro',
-  'El Santuario', 'Guarne', 'Guatapé', 'La Ceja', 'La Unión', 'Marinilla',
-  'Rionegro', 'San Rafael', 'San Vicente Ferrer', 'Sonsón',
-  // Norte
-  'Belmira', 'Donmatías', 'Entrerríos', 'San José de la Montaña',
-  'San Pedro de los Milagros', 'Santa Rosa de Osos',
-  // Nordeste
-  'Cisneros', 'Santo Domingo',
-  // Magdalena Medio
-  'Puerto Berrío', 'Puerto Triunfo',
-  // Occidente
-  'Armenia', 'Ebéjico', 'Heliconia', 'San Jerónimo',
-  'Santa Fe de Antioquia', 'Sopetrán',
-  // Suroeste
-  'Amagá', 'Ciudad Bolívar', 'Jardín', 'Titiribí',
-  // Urabá
-  'Apartadó', 'Necoclí', 'Turbo', 'Vigía del Fuerte',
 };

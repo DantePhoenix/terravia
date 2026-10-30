@@ -1,11 +1,12 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/municipios.dart';
+import 'insignias_page.dart';
 
 const _kVisitados = 'visitados';
-const _kInicializado = 'inicializado';
 
 void main() => runApp(const MunicipiosApp());
 
@@ -46,6 +47,7 @@ class _HomePageState extends State<HomePage> {
   final Set<String> _visitados = {};
   String _busqueda = '';
   Filtro _filtro = Filtro.todos;
+  int _pestana = 0;
 
   int get _total =>
       subregiones.values.fold(0, (suma, lista) => suma + lista.length);
@@ -58,10 +60,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _cargar() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!(prefs.getBool(_kInicializado) ?? false)) {
-      await prefs.setStringList(_kVisitados, visitadosIniciales.toList());
-      await prefs.setBool(_kInicializado, true);
-    }
     setState(() {
       _prefs = prefs;
       _visitados.addAll(prefs.getStringList(_kVisitados) ?? []);
@@ -73,6 +71,16 @@ class _HomePageState extends State<HomePage> {
       valor ? _visitados.add(municipio) : _visitados.remove(municipio);
     });
     await _prefs?.setStringList(_kVisitados, _visitados.toList());
+
+    // Si con este municipio se completó una subregión, se avisa de la insignia.
+    if (valor && mounted) {
+      for (final e in subregiones.entries) {
+        if (e.value.contains(municipio) && insigniaGanada(e.key, _visitados)) {
+          mostrarInsignia(context, e.key);
+          break;
+        }
+      }
+    }
   }
 
   bool _pasaFiltro(String m) {
@@ -107,43 +115,69 @@ class _HomePageState extends State<HomePage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final hayFiltro = _busqueda.isNotEmpty || _filtro != Filtro.todos;
+    final hayBusqueda = _busqueda.isNotEmpty;
     final secciones = <Widget>[];
     for (final e in subregiones.entries) {
       final visibles = e.value.where(_pasaFiltro).toList();
       if (visibles.isEmpty) continue;
-      secciones.add(_SubregionCard(
-        key: ValueKey('${e.key}-$hayFiltro'),
-        nombre: e.key,
-        todos: e.value,
-        visibles: visibles,
-        visitados: _visitados,
-        expandido: hayFiltro,
-        onChanged: _alternar,
-      ));
+      secciones.add(
+        _SubregionCard(
+          key: ValueKey('${e.key}-$hayBusqueda'),
+          nombre: e.key,
+          todos: e.value,
+          visibles: visibles,
+          visitados: _visitados,
+          filtro: _filtro,
+          expandido: hayBusqueda,
+          onChanged: _alternar,
+        ),
+      );
     }
 
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _encabezado(cs)),
-            SliverToBoxAdapter(child: _buscador()),
-            SliverToBoxAdapter(child: _filtros()),
-            if (secciones.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: Text('Sin resultados')),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate(secciones),
-                ),
-              ),
+        bottom: false,
+        child: IndexedStack(
+          index: _pestana,
+          children: [
+            CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _encabezado(cs)),
+                SliverToBoxAdapter(child: _buscador()),
+                SliverToBoxAdapter(child: _filtros()),
+                if (secciones.isEmpty)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: Text('Sin resultados')),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate(secciones),
+                    ),
+                  ),
+              ],
+            ),
+            InsigniasPage(visitados: _visitados),
           ],
         ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _pestana,
+        onDestinationSelected: (i) => setState(() => _pestana = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.list_alt_outlined),
+            selectedIcon: Icon(Icons.list_alt),
+            label: 'Lista',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.workspace_premium_outlined),
+            selectedIcon: Icon(Icons.workspace_premium),
+            label: 'Insignias',
+          ),
+        ],
       ),
     );
   }
@@ -171,7 +205,9 @@ class _HomePageState extends State<HomePage> {
                     value: progreso,
                     strokeWidth: 9,
                     strokeCap: StrokeCap.round,
-                    backgroundColor: cs.onPrimaryContainer.withValues(alpha: 0.15),
+                    backgroundColor: cs.onPrimaryContainer.withValues(
+                      alpha: 0.15,
+                    ),
                   ),
                 ),
                 Text(
@@ -253,6 +289,7 @@ class _SubregionCard extends StatelessWidget {
     required this.todos,
     required this.visibles,
     required this.visitados,
+    required this.filtro,
     required this.expandido,
     required this.onChanged,
   });
@@ -261,14 +298,18 @@ class _SubregionCard extends StatelessWidget {
   final List<String> todos;
   final List<String> visibles;
   final Set<String> visitados;
+  final Filtro filtro;
   final bool expandido;
   final Future<void> Function(String, bool) onChanged;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final n = todos.where(visitados.contains).length;
-    final completa = n == todos.length;
+    final nVisitados = todos.where(visitados.contains).length;
+    final n = filtro == Filtro.pendientes
+        ? todos.length - nVisitados
+        : nVisitados;
+    final completa = nVisitados == todos.length;
 
     return Card(
       elevation: 0,

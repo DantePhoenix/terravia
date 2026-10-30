@@ -1,3 +1,3 @@
-# terravia
+# Terravia
 
 A new Flutter project.

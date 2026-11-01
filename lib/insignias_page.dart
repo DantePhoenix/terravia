@@ -16,7 +16,8 @@ const Map<String, ({IconData icono, Color color})> _estilos = {
 };
 
 ({IconData icono, Color color}) _estiloDe(String region) =>
-    _estilos[region] ?? (icono: Icons.emoji_events, color: const Color(0xFF2E7D32));
+    _estilos[region] ??
+    (icono: Icons.emoji_events, color: const Color(0xFF2E7D32));
 
 /// Una subregión tiene su insignia cuando todos sus municipios están visitados.
 bool insigniaGanada(String region, Set<String> visitados) {

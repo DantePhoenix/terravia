@@ -7,6 +7,7 @@ import 'data/municipios.dart';
 import 'insignias_page.dart';
 
 const _kVisitados = 'visitados';
+const _kVerificadosGps = 'verificados_gps';
 
 void main() => runApp(const MunicipiosApp());
 
@@ -45,6 +46,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   SharedPreferences? _prefs;
   final Set<String> _visitados = {};
+  final Set<String> _verificadosGps = {};
   String _busqueda = '';
   Filtro _filtro = Filtro.todos;
   int _pestana = 0;
@@ -60,9 +62,15 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _cargar() async {
     final prefs = await SharedPreferences.getInstance();
+
     setState(() {
       _prefs = prefs;
+
+      // Visitas completadas, incluyendo las marcadas manualmente.
       _visitados.addAll(prefs.getStringList(_kVisitados) ?? []);
+
+      // Municipios cuya visita fue verificada por GPS.
+      _verificadosGps.addAll(prefs.getStringList(_kVerificadosGps) ?? []);
     });
   }
 
@@ -127,6 +135,7 @@ class _HomePageState extends State<HomePage> {
           todos: e.value,
           visibles: visibles,
           visitados: _visitados,
+          verificadosGps: _verificadosGps,
           filtro: _filtro,
           expandido: hayBusqueda,
           onChanged: _alternar,
@@ -289,6 +298,7 @@ class _SubregionCard extends StatelessWidget {
     required this.todos,
     required this.visibles,
     required this.visitados,
+    required this.verificadosGps,
     required this.filtro,
     required this.expandido,
     required this.onChanged,
@@ -298,6 +308,7 @@ class _SubregionCard extends StatelessWidget {
   final List<String> todos;
   final List<String> visibles;
   final Set<String> visitados;
+  final Set<String> verificadosGps;
   final Filtro filtro;
   final bool expandido;
   final Future<void> Function(String, bool) onChanged;
@@ -350,13 +361,46 @@ class _SubregionCard extends StatelessWidget {
           ),
           children: [
             for (final m in visibles)
-              CheckboxListTile(
-                value: visitados.contains(m),
-                onChanged: (v) => onChanged(m, v ?? false),
-                title: Text(m),
-                controlAffinity: ListTileControlAffinity.trailing,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-              ),
+              if (filtro == Filtro.todos)
+                CheckboxListTile(
+                  value: visitados.contains(m),
+                  onChanged: (v) => onChanged(m, v ?? false),
+                  title: Text(m),
+                  subtitle: visitados.contains(m)
+                      ? Text(
+                          verificadosGps.contains(m)
+                              ? 'Verificada por GPS'
+                              : 'Marcada manualmente',
+                        )
+                      : null,
+                  secondary: verificadosGps.contains(m)
+                      ? const Icon(Icons.gps_fixed)
+                      : null,
+                  controlAffinity: ListTileControlAffinity.trailing,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                )
+              else
+                ListTile(
+                  title: Text(m),
+                  subtitle: Text(
+                    filtro == Filtro.visitados
+                        ? verificadosGps.contains(m)
+                              ? 'Verificada por GPS'
+                              : 'Marcada manualmente'
+                        : 'Pendiente de visitar',
+                  ),
+                  leading: Icon(
+                    filtro == Filtro.visitados
+                        ? verificadosGps.contains(m)
+                              ? Icons.gps_fixed
+                              : Icons.check_circle_outline
+                        : Icons.radio_button_unchecked,
+                    color: filtro == Filtro.visitados
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
           ],
         ),
       ),

@@ -1,3 +1,4 @@
+
 name: Terravia
 description: "Mobile app for mark colombian visited towns"
 publish_to: "none"
@@ -9,13 +10,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_dotenv: ^6.0.1
+  geolocator: ^14.1.2
   shared_preferences: ^2.5.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  flutter_launcher_icons: ^0.13.1
+  flutter_launcher_icons: ^0.14.4
 
 flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"
@@ -24,3 +27,6 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - .env

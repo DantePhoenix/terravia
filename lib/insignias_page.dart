@@ -15,26 +15,31 @@ const Map<String, ({IconData icono, Color color})> _estilos = {
   'Urabá': (icono: Icons.beach_access, color: Color(0xFFD81B60)),
 };
 
+/// Estilo de la insignia final de Antioquia.
+const _estiloFinal = (icono: Icons.workspace_premium, color: Color(0xFFFFB300));
+
 ({IconData icono, Color color}) _estiloDe(String region) =>
     _estilos[region] ??
     (icono: Icons.emoji_events, color: const Color(0xFF2E7D32));
 
-/// Una subregión tiene su insignia cuando todos sus municipios están visitados.
-bool insigniaGanada(String region, Set<String> visitados) {
+/// Una subregión gana su insignia cuando todos sus municipios
+/// están verificados por GPS.
+bool insigniaGpsGanada(String region, Set<String> verificadosGps) {
   final lista = subregiones[region];
-  return lista != null && lista.every(visitados.contains);
+  return lista != null && lista.every(verificadosGps.contains);
 }
 
-/// Aviso que sale al completar una subregión.
+/// Aviso que aparece al completar una subregión por GPS.
 Future<void> mostrarInsignia(BuildContext context, String region) {
   final estilo = _estiloDe(region);
+
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
       icon: _Medalla(estilo: estilo, ganada: true, tamano: 96),
       title: const Text('¡Insignia ganada!'),
       content: Text(
-        'Completaste todos los municipios de $region.',
+        'Verificaste por GPS todos los municipios de $region.',
         textAlign: TextAlign.center,
       ),
       actionsAlignment: MainAxisAlignment.center,
@@ -48,16 +53,54 @@ Future<void> mostrarInsignia(BuildContext context, String region) {
   );
 }
 
-class InsigniasPage extends StatelessWidget {
-  const InsigniasPage({super.key, required this.visitados});
+/// Aviso que aparece al verificar por GPS todos los municipios de Antioquia.
+Future<void> mostrarInsigniaFinal(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: _Medalla(estilo: _estiloFinal, ganada: true, tamano: 104),
+      title: const Text(
+        '¡Explorador de Antioquia!',
+        textAlign: TextAlign.center,
+      ),
+      content: const Text(
+        'Verificaste por GPS todos los municipios de Antioquia. '
+        '¡Has completado el recorrido!',
+        textAlign: TextAlign.center,
+      ),
+      actionsAlignment: MainAxisAlignment.center,
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('¡Genial!'),
+        ),
+      ],
+    ),
+  );
+}
 
-  final Set<String> visitados;
+class InsigniasPage extends StatelessWidget {
+  const InsigniasPage({super.key, required this.verificadosGps});
+
+  final Set<String> verificadosGps;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final regiones = subregiones.keys.toList();
-    final ganadas = regiones.where((r) => insigniaGanada(r, visitados)).length;
+
+    // Todos los municipios definidos en las subregiones.
+    final municipios = subregiones.values.expand((lista) => lista).toSet();
+
+    final totalMunicipios = municipios.length;
+    final totalGps = municipios.where(verificadosGps.contains).length;
+
+    final antioquiaCompleta =
+        totalMunicipios > 0 && totalGps == totalMunicipios;
+
+    final ganadas = regiones
+        .where((r) => insigniaGpsGanada(r, verificadosGps))
+        .length;
 
     return CustomScrollView(
       slivers: [
@@ -73,8 +116,8 @@ class InsigniasPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$ganadas de ${regiones.length} ganadas. '
-                  'Visita todos los municipios de una subregión para obtenerla.',
+                  '$ganadas de ${regiones.length} insignias regionales ganadas.\n'
+                  '$totalGps de $totalMunicipios municipios verificados por GPS.',
                   style: TextStyle(color: cs.onSurfaceVariant),
                 ),
               ],
@@ -90,14 +133,25 @@ class InsigniasPage extends StatelessWidget {
               crossAxisSpacing: 12,
               mainAxisExtent: 200,
             ),
-            itemCount: regiones.length,
+            itemCount: regiones.length + 1,
             itemBuilder: (context, i) {
+              // La última tarjeta es la insignia final de Antioquia.
+              if (i == regiones.length) {
+                return _TarjetaInsigniaFinal(
+                  verificados: totalGps,
+                  total: totalMunicipios,
+                  ganada: antioquiaCompleta,
+                );
+              }
+
               final region = regiones[i];
               final lista = subregiones[region]!;
-              final n = lista.where(visitados.contains).length;
+
+              final nVerificados = lista.where(verificadosGps.contains).length;
+
               return _TarjetaInsignia(
                 region: region,
-                visitados: n,
+                verificados: nVerificados,
                 total: lista.length,
               );
             },
@@ -111,19 +165,19 @@ class InsigniasPage extends StatelessWidget {
 class _TarjetaInsignia extends StatelessWidget {
   const _TarjetaInsignia({
     required this.region,
-    required this.visitados,
+    required this.verificados,
     required this.total,
   });
 
   final String region;
-  final int visitados;
+  final int verificados;
   final int total;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final estilo = _estiloDe(region);
-    final ganada = visitados == total;
+    final ganada = verificados == total;
 
     return Card(
       elevation: 0,
@@ -150,17 +204,79 @@ class _TarjetaInsignia extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
-                value: visitados / total,
+                value: total == 0 ? 0 : verificados / total,
                 minHeight: 6,
                 color: ganada ? estilo.color : null,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              ganada ? 'Completada' : '$visitados/$total',
+              ganada ? 'Completada por GPS' : '$verificados/$total GPS',
               style: TextStyle(
                 fontSize: 13,
                 color: ganada ? estilo.color : cs.onSurfaceVariant,
+                fontWeight: ganada ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TarjetaInsigniaFinal extends StatelessWidget {
+  const _TarjetaInsigniaFinal({
+    required this.verificados,
+    required this.total,
+    required this.ganada,
+  });
+
+  final int verificados;
+  final int total;
+  final bool ganada;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: ganada
+          ? _estiloFinal.color.withValues(alpha: 0.14)
+          : cs.surfaceContainerHighest.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _Medalla(estilo: _estiloFinal, ganada: ganada, tamano: 76),
+            const SizedBox(height: 10),
+            const Text(
+              'Explorador de Antioquia',
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: total == 0 ? 0 : verificados / total,
+                minHeight: 6,
+                color: ganada ? _estiloFinal.color : null,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              ganada ? '¡Completada por GPS!' : '$verificados/$total GPS',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: ganada ? _estiloFinal.color : cs.onSurfaceVariant,
                 fontWeight: ganada ? FontWeight.w600 : FontWeight.normal,
               ),
             ),
@@ -185,6 +301,7 @@ class _Medalla extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     return SizedBox(
       width: tamano,
       height: tamano,

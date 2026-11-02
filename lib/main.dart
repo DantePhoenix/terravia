@@ -1,15 +1,48 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/municipios.dart';
+import 'data/ubicaciones.dart';
+import 'data/verificaciones.dart';
 import 'insignias_page.dart';
 
 const _kVisitados = 'visitados';
 const _kVerificadosGps = 'verificados_gps';
+const _kRegistro = 'registro_verificaciones';
 
-void main() => runApp(const MunicipiosApp());
+const _meses = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+];
+
+/// Ejemplo: "1 nov 2026, 22:12".
+String _formatoFecha(DateTime f) {
+  final hora = f.hour.toString().padLeft(2, '0');
+  final min = f.minute.toString().padLeft(2, '0');
+  return '${f.day} ${_meses[f.month - 1]} ${f.year}, $hora:$min';
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: '.env');
+
+  runApp(const MunicipiosApp());
+}
 
 class MunicipiosApp extends StatelessWidget {
   const MunicipiosApp({super.key});
@@ -45,8 +78,16 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   SharedPreferences? _prefs;
+
+  // Municipios marcados como visitados.
   final Set<String> _visitados = {};
+
+  // Municipios cuya visita fue verificada por GPS.
   final Set<String> _verificadosGps = {};
+
+  // Fecha y coordenadas de la última verificación de cada municipio.
+  final Map<String, Verificacion> _registro = {};
+
   String _busqueda = '';
   Filtro _filtro = Filtro.todos;
   int _pestana = 0;
@@ -60,47 +101,229 @@ class _HomePageState extends State<HomePage> {
     _cargar();
   }
 
+  // Cargar los datos guardados.
   Future<void> _cargar() async {
     final prefs = await SharedPreferences.getInstance();
+
+    if (!mounted) return;
 
     setState(() {
       _prefs = prefs;
 
-      // Visitas completadas, incluyendo las marcadas manualmente.
       _visitados.addAll(prefs.getStringList(_kVisitados) ?? []);
 
-      // Municipios cuya visita fue verificada por GPS.
       _verificadosGps.addAll(prefs.getStringList(_kVerificadosGps) ?? []);
+
+      for (final v in Verificacion.decodificar(prefs.getString(_kRegistro))) {
+        _registro[v.municipio] = v;
+      }
     });
   }
 
-  Future<void> _alternar(String municipio, bool valor) async {
-    setState(() {
-      valor ? _visitados.add(municipio) : _visitados.remove(municipio);
-    });
+  // Guardar los tres estados en el dispositivo.
+  Future<void> _guardar() async {
     await _prefs?.setStringList(_kVisitados, _visitados.toList());
 
-    // Si con este municipio se completó una subregión, se avisa de la insignia.
-    if (valor && mounted) {
+    await _prefs?.setStringList(_kVerificadosGps, _verificadosGps.toList());
+
+    await _prefs?.setString(
+      _kRegistro,
+      Verificacion.codificar(_registro.values),
+    );
+  }
+
+  // Verificación más reciente de todas, o null si no hay ninguna.
+  Verificacion? get _ultimaVerificacion {
+    Verificacion? ultima;
+
+    for (final v in _registro.values) {
+      if (ultima == null || v.fecha.isAfter(ultima.fecha)) {
+        ultima = v;
+      }
+    }
+
+    return ultima;
+  }
+
+  // Marcar o desmarcar manualmente un municipio.
+  Future<void> _alternar(String municipio, bool valor) async {
+    setState(() {
+      if (valor) {
+        _visitados.add(municipio);
+      } else {
+        _visitados.remove(municipio);
+
+        // Al desmarcarlo, también se elimina su verificación GPS.
+        _verificadosGps.remove(municipio);
+        _registro.remove(municipio);
+      }
+    });
+
+    await _guardar();
+  }
+
+  // Verificar que el usuario se encuentre en el municipio.
+  Future<void> _verificarPorGps(String municipio) async {
+    if (!puntosMunicipios.containsKey(municipio)) {
+      _mostrarMensaje(
+        'Todavía no tenemos ubicación GPS configurada para $municipio.',
+      );
+      return;
+    }
+
+    // Comprobar que el servicio de ubicación esté activo.
+    final servicioActivo = await Geolocator.isLocationServiceEnabled();
+
+    if (!servicioActivo) {
+      _mostrarMensaje('Activa la ubicación GPS de tu dispositivo.');
+      return;
+    }
+
+    // Comprobar permisos de ubicación.
+    var permiso = await Geolocator.checkPermission();
+
+    if (permiso == LocationPermission.denied) {
+      permiso = await Geolocator.requestPermission();
+    }
+
+    if (permiso == LocationPermission.denied ||
+        permiso == LocationPermission.deniedForever) {
+      _mostrarMensaje(
+        'Necesitamos permiso de ubicación para verificar la visita.',
+      );
+      return;
+    }
+
+    try {
+      // Obtener la ubicación actual.
+      final posicion = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+
+      // Rechazar ubicaciones simuladas o lecturas viejas.
+      final errorLectura = validarLectura(posicion);
+
+      if (errorLectura != null) {
+        _mostrarMensaje(errorLectura);
+        return;
+      }
+
+      // Comparar con los puntos y radios del municipio.
+      final evaluacion = evaluarUbicacion(
+        municipio,
+        posicion.latitude,
+        posicion.longitude,
+      );
+
+      // Rechazar si está fuera del radio permitido.
+      if (evaluacion == null || !evaluacion.dentro) {
+        final km = ((evaluacion?.distanciaMetros ?? 0) / 1000).toStringAsFixed(
+          1,
+        );
+
+        _mostrarMensaje(
+          'Estás a $km km aproximadamente de $municipio. '
+          'Debes estar dentro del área permitida para verificar la visita.',
+        );
+        return;
+      }
+
+      // Rechazar saltos imposibles respecto a la verificación anterior.
+      final errorCoherencia = validarCoherencia(posicion, _ultimaVerificacion);
+
+      if (errorCoherencia != null) {
+        _mostrarMensaje(errorCoherencia);
+        return;
+      }
+
+      if (!mounted) return;
+
+      // Guardar qué insignias estaban completas antes de esta verificación.
+      final regionesCompletadasAntes = subregiones.keys
+          .where((region) => insigniaGpsGanada(region, _verificadosGps))
+          .toSet();
+
+      // Todos los municipios definidos en la aplicación.
+      final todosLosMunicipios = subregiones.values
+          .expand((lista) => lista)
+          .toSet();
+
+      // Comprobar si Antioquia ya estaba completa.
+      final antioquiaCompletaAntes =
+          todosLosMunicipios.isNotEmpty &&
+          todosLosMunicipios.every(_verificadosGps.contains);
+
+      // Registrar la visita como completada y verificada.
+      setState(() {
+        _visitados.add(municipio);
+        _verificadosGps.add(municipio);
+        _registro[municipio] = Verificacion(
+          municipio: municipio,
+          lat: posicion.latitude,
+          lon: posicion.longitude,
+          fecha: DateTime.now(),
+        );
+      });
+
+      // Guardar los estados.
+      await _guardar();
+
+      _mostrarMensaje('¡Visita de $municipio verificada por GPS!');
+
+      // Mostrar insignia regional solo si acaba de completarse.
       for (final e in subregiones.entries) {
-        if (e.value.contains(municipio) && insigniaGanada(e.key, _visitados)) {
-          mostrarInsignia(context, e.key);
+        if (!e.value.contains(municipio)) continue;
+
+        final completadaAhora = insigniaGpsGanada(e.key, _verificadosGps);
+
+        if (!regionesCompletadasAntes.contains(e.key) &&
+            completadaAhora &&
+            mounted) {
+          await mostrarInsignia(context, e.key);
           break;
         }
       }
+
+      // Mostrar la insignia final solo al completar todos los municipios.
+      final antioquiaCompletaAhora =
+          todosLosMunicipios.isNotEmpty &&
+          todosLosMunicipios.every(_verificadosGps.contains);
+
+      if (!antioquiaCompletaAntes && antioquiaCompletaAhora && mounted) {
+        await mostrarInsigniaFinal(context);
+      }
+    } catch (e) {
+      _mostrarMensaje(
+        'No fue posible obtener tu ubicación. Intenta nuevamente.',
+      );
     }
   }
 
+  // Mostrar mensajes al usuario.
+  void _mostrarMensaje(String mensaje) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensaje)));
+  }
+
+  // Aplicar filtros de búsqueda y estado.
   bool _pasaFiltro(String m) {
     if (_busqueda.isNotEmpty &&
         !_sinTildes(m).contains(_sinTildes(_busqueda))) {
       return false;
     }
+
     switch (_filtro) {
       case Filtro.visitados:
         return _visitados.contains(m);
+
       case Filtro.pendientes:
         return !_visitados.contains(m);
+
       case Filtro.todos:
         return true;
     }
@@ -125,9 +348,12 @@ class _HomePageState extends State<HomePage> {
 
     final hayBusqueda = _busqueda.isNotEmpty;
     final secciones = <Widget>[];
+
     for (final e in subregiones.entries) {
       final visibles = e.value.where(_pasaFiltro).toList();
+
       if (visibles.isEmpty) continue;
+
       secciones.add(
         _SubregionCard(
           key: ValueKey('${e.key}-$hayBusqueda'),
@@ -136,9 +362,11 @@ class _HomePageState extends State<HomePage> {
           visibles: visibles,
           visitados: _visitados,
           verificadosGps: _verificadosGps,
+          registro: _registro,
           filtro: _filtro,
           expandido: hayBusqueda,
           onChanged: _alternar,
+          onVerifyGps: _verificarPorGps,
         ),
       );
     }
@@ -168,13 +396,15 @@ class _HomePageState extends State<HomePage> {
                   ),
               ],
             ),
-            InsigniasPage(visitados: _visitados),
+            InsigniasPage(verificadosGps: _verificadosGps),
           ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _pestana,
-        onDestinationSelected: (i) => setState(() => _pestana = i),
+        onDestinationSelected: (i) {
+          setState(() => _pestana = i);
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.list_alt_outlined),
@@ -191,9 +421,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Encabezado con progreso general.
   Widget _encabezado(ColorScheme cs) {
     final n = _visitados.length;
-    final progreso = n / _total;
+    final progreso = _total == 0 ? 0.0 : n / _total;
+
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -262,6 +494,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Buscador de municipios.
   Widget _buscador() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -269,11 +502,14 @@ class _HomePageState extends State<HomePage> {
         hintText: 'Buscar municipio',
         leading: const Icon(Icons.search),
         elevation: const WidgetStatePropertyAll(0),
-        onChanged: (v) => setState(() => _busqueda = v.trim()),
+        onChanged: (v) {
+          setState(() => _busqueda = v.trim());
+        },
       ),
     );
   }
 
+  // Filtros Todos, Visitados y Pendientes.
   Widget _filtros() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -285,7 +521,9 @@ class _HomePageState extends State<HomePage> {
           ButtonSegment(value: Filtro.pendientes, label: Text('Pendientes')),
         ],
         selected: {_filtro},
-        onSelectionChanged: (s) => setState(() => _filtro = s.first),
+        onSelectionChanged: (s) {
+          setState(() => _filtro = s.first);
+        },
       ),
     );
   }
@@ -299,9 +537,11 @@ class _SubregionCard extends StatelessWidget {
     required this.visibles,
     required this.visitados,
     required this.verificadosGps,
+    required this.registro,
     required this.filtro,
     required this.expandido,
     required this.onChanged,
+    required this.onVerifyGps,
   });
 
   final String nombre;
@@ -309,17 +549,34 @@ class _SubregionCard extends StatelessWidget {
   final List<String> visibles;
   final Set<String> visitados;
   final Set<String> verificadosGps;
+  final Map<String, Verificacion> registro;
   final Filtro filtro;
   final bool expandido;
+
+  // Texto de estado de un municipio visitado.
+  String _estado(String m) {
+    if (!verificadosGps.contains(m)) return 'Marcada manualmente';
+
+    final v = registro[m];
+
+    return v == null
+        ? 'Verificada por GPS'
+        : 'Verificada por GPS · ${_formatoFecha(v.fecha)}';
+  }
+
   final Future<void> Function(String, bool) onChanged;
+  final Future<void> Function(String) onVerifyGps;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+
     final nVisitados = todos.where(visitados.contains).length;
+
     final n = filtro == Filtro.pendientes
         ? todos.length - nVisitados
         : nVisitados;
+
     final completa = nVisitados == todos.length;
 
     return Card(
@@ -345,7 +602,7 @@ class _SubregionCard extends StatelessWidget {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
-                      value: n / todos.length,
+                      value: todos.isEmpty ? 0 : n / todos.length,
                       minHeight: 6,
                     ),
                   ),
@@ -364,18 +621,20 @@ class _SubregionCard extends StatelessWidget {
               if (filtro == Filtro.todos)
                 CheckboxListTile(
                   value: visitados.contains(m),
-                  onChanged: (v) => onChanged(m, v ?? false),
+                  onChanged: (v) {
+                    onChanged(m, v ?? false);
+                  },
                   title: Text(m),
-                  subtitle: visitados.contains(m)
-                      ? Text(
-                          verificadosGps.contains(m)
-                              ? 'Verificada por GPS'
-                              : 'Marcada manualmente',
-                        )
-                      : null,
+                  subtitle: visitados.contains(m) ? Text(_estado(m)) : null,
                   secondary: verificadosGps.contains(m)
-                      ? const Icon(Icons.gps_fixed)
-                      : null,
+                      ? const Icon(Icons.gps_fixed, color: Colors.green)
+                      : IconButton(
+                          tooltip: 'Verificar visita por GPS',
+                          icon: const Icon(Icons.gps_not_fixed),
+                          onPressed: () {
+                            onVerifyGps(m);
+                          },
+                        ),
                   controlAffinity: ListTileControlAffinity.trailing,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                 )
@@ -384,9 +643,7 @@ class _SubregionCard extends StatelessWidget {
                   title: Text(m),
                   subtitle: Text(
                     filtro == Filtro.visitados
-                        ? verificadosGps.contains(m)
-                              ? 'Verificada por GPS'
-                              : 'Marcada manualmente'
+                        ? _estado(m)
                         : 'Pendiente de visitar',
                   ),
                   leading: Icon(
@@ -396,8 +653,8 @@ class _SubregionCard extends StatelessWidget {
                               : Icons.check_circle_outline
                         : Icons.radio_button_unchecked,
                     color: filtro == Filtro.visitados
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ? cs.primary
+                        : cs.onSurfaceVariant,
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 20),
                 ),
